@@ -76,6 +76,8 @@ pub struct ThreadMetadata {
     pub tokens_used: i64,
     /// Whether the thread has observed a user message.
     pub has_user_event: bool,
+    /// Tri-state image-context signal: true when images are known to exist.
+    pub has_image_context: Option<bool>,
     /// The archive timestamp, if the thread is archived.
     pub archived_at: Option<DateTime<Utc>>,
     /// The git commit SHA, if known.
@@ -115,6 +117,8 @@ pub struct ThreadMetadataBuilder {
     pub git_branch: Option<String>,
     /// The git origin URL, if known.
     pub git_origin_url: Option<String>,
+    /// Tri-state image-context signal, if known.
+    pub has_image_context: Option<bool>,
 }
 
 impl ThreadMetadataBuilder {
@@ -139,6 +143,7 @@ impl ThreadMetadataBuilder {
             git_sha: None,
             git_branch: None,
             git_origin_url: None,
+            has_image_context: None,
         }
     }
 
@@ -168,6 +173,7 @@ impl ThreadMetadataBuilder {
             approval_mode,
             tokens_used: 0,
             has_user_event: false,
+            has_image_context: self.has_image_context.or(Some(false)),
             archived_at: self.archived_at.map(canonicalize_datetime),
             git_sha: self.git_sha.clone(),
             git_branch: self.git_branch.clone(),
@@ -216,6 +222,9 @@ impl ThreadMetadata {
         if self.has_user_event != other.has_user_event {
             diffs.push("has_user_event");
         }
+        if self.has_image_context != other.has_image_context {
+            diffs.push("has_image_context");
+        }
         if self.archived_at != other.archived_at {
             diffs.push("archived_at");
         }
@@ -250,6 +259,7 @@ pub(crate) struct ThreadRow {
     approval_mode: String,
     tokens_used: i64,
     has_user_event: bool,
+    has_image_context: Option<bool>,
     archived_at: Option<i64>,
     git_sha: Option<String>,
     git_branch: Option<String>,
@@ -271,6 +281,7 @@ impl ThreadRow {
             approval_mode: row.try_get("approval_mode")?,
             tokens_used: row.try_get("tokens_used")?,
             has_user_event: row.try_get("has_user_event")?,
+            has_image_context: row.try_get("has_image_context")?,
             archived_at: row.try_get("archived_at")?,
             git_sha: row.try_get("git_sha")?,
             git_branch: row.try_get("git_branch")?,
@@ -296,6 +307,7 @@ impl TryFrom<ThreadRow> for ThreadMetadata {
             approval_mode,
             tokens_used,
             has_user_event,
+            has_image_context,
             archived_at,
             git_sha,
             git_branch,
@@ -314,6 +326,7 @@ impl TryFrom<ThreadRow> for ThreadMetadata {
             approval_mode,
             tokens_used,
             has_user_event,
+            has_image_context,
             archived_at: archived_at.map(epoch_seconds_to_datetime).transpose()?,
             git_sha,
             git_branch,

@@ -108,6 +108,7 @@ SELECT
     approval_mode,
     tokens_used,
     has_user_event,
+    has_image_context,
     archived_at,
     git_sha,
     git_branch,
@@ -226,6 +227,7 @@ SELECT
     approval_mode,
     tokens_used,
     has_user_event,
+    has_image_context,
     archived_at,
     git_sha,
     git_branch,
@@ -380,12 +382,13 @@ INSERT INTO threads (
     approval_mode,
     tokens_used,
     has_user_event,
+    has_image_context,
     archived,
     archived_at,
     git_sha,
     git_branch,
     git_origin_url
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     rollout_path = excluded.rollout_path,
     created_at = excluded.created_at,
@@ -398,6 +401,7 @@ ON CONFLICT(id) DO UPDATE SET
     approval_mode = excluded.approval_mode,
     tokens_used = excluded.tokens_used,
     has_user_event = excluded.has_user_event,
+    has_image_context = excluded.has_image_context,
     archived = excluded.archived,
     archived_at = excluded.archived_at,
     git_sha = excluded.git_sha,
@@ -417,11 +421,32 @@ ON CONFLICT(id) DO UPDATE SET
         .bind(metadata.approval_mode.as_str())
         .bind(metadata.tokens_used)
         .bind(metadata.has_user_event)
+        .bind(metadata.has_image_context)
         .bind(metadata.archived_at.is_some())
         .bind(metadata.archived_at.map(datetime_to_epoch_seconds))
         .bind(metadata.git_sha.as_deref())
         .bind(metadata.git_branch.as_deref())
         .bind(metadata.git_origin_url.as_deref())
+        .execute(self.pool.as_ref())
+        .await?;
+        Ok(())
+    }
+
+    /// Update the persisted image-context signal for a thread.
+    pub async fn set_thread_has_image_context(
+        &self,
+        thread_id: ThreadId,
+        has_image_context: bool,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+UPDATE threads
+SET has_image_context = ?
+WHERE id = ?
+            "#,
+        )
+        .bind(has_image_context)
+        .bind(thread_id.to_string())
         .execute(self.pool.as_ref())
         .await?;
         Ok(())
@@ -1250,6 +1275,7 @@ mod tests {
             approval_mode: crate::extract::enum_to_string(&AskForApproval::OnRequest),
             tokens_used: 0,
             has_user_event: true,
+            has_image_context: Some(false),
             archived_at: None,
             git_sha: None,
             git_branch: None,

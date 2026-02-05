@@ -100,6 +100,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing::error;
+use tracing::warn;
 
 type JsonValue = serde_json::Value;
 
@@ -830,6 +831,16 @@ pub(crate) async fn apply_bespoke_event_handling(
                 .await;
         }
         EventMsg::RawResponseItem(raw_response_item_event) => {
+            if raw_response_item_event.item.has_input_image() {
+                if let Some(ctx) = conversation.state_db()
+                    && let Err(err) =
+                        ctx.set_thread_has_image_context(conversation_id, true).await
+                {
+                    warn!(
+                        "failed to persist image context for thread {conversation_id}: {err}"
+                    );
+                }
+            }
             maybe_emit_raw_response_item_completed(
                 api_version,
                 conversation_id,

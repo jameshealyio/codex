@@ -70,7 +70,10 @@ fn apply_event_msg(metadata: &mut ThreadMetadata, event: &EventMsg) {
     }
 }
 
-fn apply_response_item(_metadata: &mut ThreadMetadata, _item: &ResponseItem) {
+fn apply_response_item(metadata: &mut ThreadMetadata, item: &ResponseItem) {
+    if item.has_input_image() {
+        metadata.has_image_context = Some(true);
+    }
     // Title and has_user_event are derived from EventMsg::UserMessage only.
 }
 
@@ -158,6 +161,7 @@ mod tests {
             approval_mode: "on-request".to_string(),
             tokens_used: 1,
             has_user_event: false,
+            has_image_context: None,
             archived_at: None,
             git_sha: None,
             git_branch: None,

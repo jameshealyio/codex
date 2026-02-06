@@ -143,6 +143,13 @@ const PLAN_IMPLEMENTATION_TITLE: &str = "Implement this plan?";
 const PLAN_IMPLEMENTATION_YES: &str = "Yes, implement this plan";
 const PLAN_IMPLEMENTATION_NO: &str = "No, stay in Plan mode";
 const PLAN_IMPLEMENTATION_CODING_MESSAGE: &str = "Implement the plan.";
+const DEFAULT_RALPH_LOOPS: u32 = 6;
+const DEFAULT_RALPH_COMPACT_AT_PERCENT: u8 = 60;
+const MIN_RALPH_LOOPS: u32 = 1;
+const MAX_RALPH_LOOPS: u32 = 50;
+const MIN_RALPH_COMPACT_AT_PERCENT: u8 = 20;
+const MAX_RALPH_COMPACT_AT_PERCENT: u8 = 90;
+const MAX_RALPH_INSTRUCTIONS_CHARS: usize = 20_000;
 
 use crate::app_event::AppEvent;
 use crate::app_event::ConnectorsSnapshot;
@@ -238,6 +245,21 @@ struct RunningCommand {
     command: Vec<String>,
     parsed_cmd: Vec<ParsedCommand>,
     source: ExecCommandSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RalphInstructions {
+    resolved_path: PathBuf,
+    content: String,
+    truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RalphOptions {
+    goal: String,
+    loops: u32,
+    compact_at_percent: u8,
+    instructions: Option<RalphInstructions>,
 }
 
 struct UnifiedExecProcessSummary {
@@ -3412,12 +3434,23 @@ impl ChatWidget {
                 else {
                     return;
                 };
-                let goal = prepared_args.trim();
-                if goal.is_empty() {
-                    self.dispatch_command(cmd);
+                let options =
+                    match Self::parse_ralph_options(prepared_args.trim(), &self.config.cwd) {
+                        Ok(options) => options,
+                        Err(message) => {
+                            self.add_error_message(message);
+                            self.add_to_history(history_cell::new_ralph_guide_event());
+                            self.bottom_pane.drain_pending_submission_state();
+                            self.request_redraw();
+                            return;
+                        }
+                    };
+                if options.goal.is_empty() {
+                    self.add_to_history(history_cell::new_ralph_guide_event());
+                    self.bottom_pane.drain_pending_submission_state();
                     return;
                 }
-                let prompt = Self::build_ralph_prompt(goal);
+                let prompt = Self::build_ralph_prompt(&options);
                 let user_message = UserMessage {
                     text: prompt,
                     local_images: self
@@ -3440,10 +3473,195 @@ impl ChatWidget {
         }
     }
 
-    fn build_ralph_prompt(goal: &str) -> String {
-        format!(
-            "Enter Ralph Wiggum mode and execute until the goal is complete.\n\nGoal:\n{goal}\n\nOperating rules:\n1. Work in iterative loops and keep momentum toward completion.\n2. When context usage approaches about 60%, compact the thread and continue.\n3. After each loop, provide a short checkpoint with done/next/blockers.\n4. Use the selected model unless I explicitly ask to switch.\n5. Stop only when the goal is done or clearly blocked with concrete reasons.\n\nStart now with loop 1."
-        )
+    fn parse_ralph_options(args: &str, cwd: &Path) -> Result<RalphOptions, String> {
+        if args.is_empty() {
+            return Err("Missing goal. Run `/ralph <goal>`.".to_string());
+        }
+        let Some(tokens) = shlex::split(args) else {
+            return Err(
+                "Could not parse `/ralph` arguments. Check for unmatched quotes.".to_string(),
+            );
+        };
+        if tokens.is_empty() {
+            return Err("Missing goal. Run `/ralph <goal>`.".to_string());
+        }
+
+        let mut loops = DEFAULT_RALPH_LOOPS;
+        let mut compact_at_percent = DEFAULT_RALPH_COMPACT_AT_PERCENT;
+        let mut instructions_path: Option<String> = None;
+        let mut goal_tokens: Vec<String> = Vec::new();
+
+        let mut idx = 0usize;
+        while idx < tokens.len() {
+            let token = &tokens[idx];
+            if token == "--" {
+                goal_tokens.extend(tokens[idx + 1..].iter().cloned());
+                break;
+            }
+
+            if token == "--loops" || token == "-l" {
+                idx += 1;
+                let Some(value) = tokens.get(idx) else {
+                    return Err("`/ralph --loops` requires a numeric value.".to_string());
+                };
+                loops = Self::parse_ralph_loops(value)?;
+                idx += 1;
+                continue;
+            }
+            if let Some(value) = token.strip_prefix("--loops=") {
+                loops = Self::parse_ralph_loops(value)?;
+                idx += 1;
+                continue;
+            }
+
+            if token == "--compact-at" {
+                idx += 1;
+                let Some(value) = tokens.get(idx) else {
+                    return Err("`/ralph --compact-at` requires a percentage value.".to_string());
+                };
+                compact_at_percent = Self::parse_ralph_compact_at_percent(value)?;
+                idx += 1;
+                continue;
+            }
+            if let Some(value) = token.strip_prefix("--compact-at=") {
+                compact_at_percent = Self::parse_ralph_compact_at_percent(value)?;
+                idx += 1;
+                continue;
+            }
+
+            if token == "--instructions" || token == "-i" {
+                idx += 1;
+                let Some(value) = tokens.get(idx) else {
+                    return Err("`/ralph --instructions` requires a file path.".to_string());
+                };
+                instructions_path = Some(value.clone());
+                idx += 1;
+                continue;
+            }
+            if let Some(value) = token.strip_prefix("--instructions=") {
+                instructions_path = Some(value.to_string());
+                idx += 1;
+                continue;
+            }
+
+            if token == "--help" || token == "-h" {
+                return Err("Run `/ralph` with no arguments to view the in-app guide.".to_string());
+            }
+
+            if token.starts_with('-') {
+                return Err(format!(
+                    "Unknown `/ralph` option `{token}`. Run `/ralph` to see available options."
+                ));
+            }
+
+            goal_tokens.push(token.clone());
+            idx += 1;
+        }
+
+        let goal = goal_tokens.join(" ").trim().to_string();
+        if goal.is_empty() {
+            return Err("Missing goal. Run `/ralph <goal>`.".to_string());
+        }
+
+        let instructions = match instructions_path {
+            Some(path_arg) => Some(Self::load_ralph_instructions(cwd, &path_arg)?),
+            None => None,
+        };
+
+        Ok(RalphOptions {
+            goal,
+            loops,
+            compact_at_percent,
+            instructions,
+        })
+    }
+
+    fn parse_ralph_loops(raw: &str) -> Result<u32, String> {
+        let loops = raw
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid loops value `{raw}`. Use an integer."))?;
+        if !(MIN_RALPH_LOOPS..=MAX_RALPH_LOOPS).contains(&loops) {
+            return Err(format!(
+                "Loops must be between {MIN_RALPH_LOOPS} and {MAX_RALPH_LOOPS}."
+            ));
+        }
+        Ok(loops)
+    }
+
+    fn parse_ralph_compact_at_percent(raw: &str) -> Result<u8, String> {
+        let compact_at = raw
+            .parse::<u8>()
+            .map_err(|_| format!("Invalid compact threshold `{raw}`. Use an integer percent."))?;
+        if !(MIN_RALPH_COMPACT_AT_PERCENT..=MAX_RALPH_COMPACT_AT_PERCENT).contains(&compact_at) {
+            return Err(format!(
+                "Compact threshold must be between {MIN_RALPH_COMPACT_AT_PERCENT}% and {MAX_RALPH_COMPACT_AT_PERCENT}%."
+            ));
+        }
+        Ok(compact_at)
+    }
+
+    fn load_ralph_instructions(cwd: &Path, raw_path: &str) -> Result<RalphInstructions, String> {
+        let raw = PathBuf::from(raw_path);
+        let resolved_path = if raw.is_absolute() {
+            raw
+        } else {
+            cwd.join(raw)
+        };
+        let content = std::fs::read_to_string(&resolved_path).map_err(|error| {
+            format!(
+                "Failed to read instructions file `{}`: {error}",
+                resolved_path.display()
+            )
+        })?;
+
+        let trimmed = content.trim().to_string();
+        if trimmed.is_empty() {
+            return Err(format!(
+                "Instructions file `{}` is empty.",
+                resolved_path.display()
+            ));
+        }
+
+        let mut truncated = false;
+        let content = if trimmed.chars().count() > MAX_RALPH_INSTRUCTIONS_CHARS {
+            truncated = true;
+            trimmed.chars().take(MAX_RALPH_INSTRUCTIONS_CHARS).collect()
+        } else {
+            trimmed
+        };
+
+        Ok(RalphInstructions {
+            resolved_path,
+            content,
+            truncated,
+        })
+    }
+
+    fn build_ralph_prompt(options: &RalphOptions) -> String {
+        let mut prompt = format!(
+            "Enter Ralph Wiggum mode and execute until the goal is complete.\n\nGoal:\n{}\n\nMode configuration:\n- Loop budget: {}\n- Compaction threshold: {}%\n- Checkpoint cadence: every loop\n",
+            options.goal, options.loops, options.compact_at_percent
+        );
+
+        if let Some(instructions) = &options.instructions {
+            let truncation_note = if instructions.truncated {
+                " (truncated to 20,000 chars)"
+            } else {
+                ""
+            };
+            prompt.push_str(&format!(
+                "- External instructions: {}{truncation_note}\n",
+                instructions.resolved_path.display()
+            ));
+            prompt.push_str("\nInstructions file content:\n```\n");
+            prompt.push_str(&instructions.content);
+            prompt.push_str("\n```\n");
+        }
+
+        prompt.push_str(
+            "\nOperating rules:\n1. Work in iterative loops toward completion.\n2. Start each loop with `Loop X/Y`.\n3. If context usage reaches the configured threshold, compact the thread and continue.\n4. End each loop with a concise checkpoint: `done`, `next`, `blockers`.\n5. Keep the selected model unless explicitly told to switch.\n6. Stop only when complete or truly blocked with concrete evidence.\n\nStart now with loop 1.",
+        );
+        prompt
     }
 
     fn show_rename_prompt(&mut self) {

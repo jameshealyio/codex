@@ -1774,18 +1774,28 @@ pub(crate) fn new_ralph_guide_event() -> PlainHistoryCell {
             "• ".dim(),
             "Ralph Mode".bold(),
             " ".into(),
-            "(quick guide)".dim(),
+            "(opinionated loop runner)".dim(),
         ]
         .into(),
         vec!["  Usage: ".dim(), "/ralph".cyan()].into(),
-        vec!["    Show this guide and explain how Ralph mode behaves in this fork.".into()].into(),
-        vec!["  Usage: ".dim(), "/ralph <goal>".cyan()].into(),
-        vec!["    Submit a goal-focused prompt that asks Codex to run iterative loops,".into()]
+        vec!["    Show this guide.".into()].into(),
+        vec!["  Usage: ".dim(), "/ralph [options] <goal>".cyan()].into(),
+        vec!["    Start Ralph mode with an opinionated execution protocol.".into()].into(),
+        vec!["  Options:".dim()].into(),
+        vec!["    --loops, -l <n>        Number of loops (default: 6, range: 1-50).".into()]
             .into(),
-        vec!["    compact context around 60%, and continue until complete.".into()].into(),
+        vec![
+            "    --compact-at <pct>     Context compaction threshold (default: 60, range: 20-90)."
+                .into(),
+        ]
+        .into(),
+        vec![
+            "    --instructions, -i <path>  Load extra instructions from a file (for example INSTRUCTIONS.md).".into(),
+        ]
+        .into(),
         vec![
             "  Example: ".dim(),
-            "/ralph ship the failing test fix".cyan(),
+            "/ralph --loops 8 --instructions INSTRUCTIONS.md ship the failing test fix".cyan(),
         ]
         .into(),
     ];

@@ -2865,8 +2865,12 @@ async fn slash_ralph_displays_guide() {
         "expected guide title in output: {rendered}"
     );
     assert!(
-        rendered.contains("/ralph <goal>"),
+        rendered.contains("/ralph [options] <goal>"),
         "expected usage in output: {rendered}"
+    );
+    assert!(
+        rendered.contains("--loops"),
+        "expected options in guide output: {rendered}"
     );
 }
 
@@ -2914,8 +2918,111 @@ async fn slash_ralph_with_args_submits_structured_prompt() {
         "expected goal in Ralph prompt: {text}"
     );
     assert!(
-        text.contains("compact the thread"),
+        text.contains("Loop budget: 6"),
+        "expected default loop budget in Ralph prompt: {text}"
+    );
+    assert!(
+        text.contains("Compaction threshold: 60%"),
+        "expected default compaction threshold in Ralph prompt: {text}"
+    );
+    assert!(
+        text.contains("Start each loop with `Loop X/Y`."),
         "expected compaction instruction in Ralph prompt: {text}"
+    );
+}
+
+#[tokio::test]
+async fn slash_ralph_with_options_and_instructions_file_submits_structured_prompt() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    let temp = tempdir().unwrap();
+    let instructions_path = temp.path().join("INSTRUCTIONS.md");
+    std::fs::write(&instructions_path, "Always run tests before finalizing.").unwrap();
+    chat.config.cwd = temp.path().to_path_buf();
+
+    let configured = codex_core::protocol::SessionConfiguredEvent {
+        session_id: ThreadId::new(),
+        forked_from_id: None,
+        thread_name: None,
+        model: "test-model".to_string(),
+        model_provider_id: "test-provider".to_string(),
+        approval_policy: AskForApproval::Never,
+        sandbox_policy: SandboxPolicy::ReadOnly,
+        cwd: temp.path().to_path_buf(),
+        reasoning_effort: Some(ReasoningEffortConfig::default()),
+        history_log_id: 0,
+        history_entry_count: 0,
+        initial_messages: None,
+        rollout_path: None,
+    };
+    chat.handle_codex_event(Event {
+        id: "configured".into(),
+        msg: EventMsg::SessionConfigured(configured),
+    });
+
+    chat.bottom_pane.set_composer_text(
+        "/ralph --loops 3 --compact-at 55 --instructions INSTRUCTIONS.md complete release notes"
+            .to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let items = match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => items,
+        other => panic!("expected Op::UserTurn, got {other:?}"),
+    };
+    let UserInput::Text { text, .. } = &items[0] else {
+        panic!("expected UserInput::Text item");
+    };
+    assert!(
+        text.contains("Loop budget: 3"),
+        "expected custom loop budget in Ralph prompt: {text}"
+    );
+    assert!(
+        text.contains("Compaction threshold: 55%"),
+        "expected custom threshold in Ralph prompt: {text}"
+    );
+    assert!(
+        text.contains("External instructions:"),
+        "expected instructions file reference in Ralph prompt: {text}"
+    );
+    assert!(
+        text.contains("Always run tests before finalizing."),
+        "expected file content in Ralph prompt: {text}"
+    );
+}
+
+#[tokio::test]
+async fn slash_ralph_with_invalid_option_shows_error_and_guide() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
+
+    chat.bottom_pane.set_composer_text(
+        "/ralph --bogus-option complete release notes".to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    assert!(op_rx.try_recv().is_err(), "expected no submitted op");
+    let cells = drain_insert_history(&mut rx);
+    assert!(
+        cells.len() >= 2,
+        "expected error and guide cells, got {}",
+        cells.len()
+    );
+
+    let rendered = cells
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("Unknown `/ralph` option"),
+        "expected invalid option error message: {rendered}"
+    );
+    assert!(
+        rendered.contains("Ralph Mode"),
+        "expected guide to follow invalid option error: {rendered}"
     );
 }
 

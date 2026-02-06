@@ -112,6 +112,8 @@ There are multiple submission paths, but they share the same core rules:
 
 The same preparation path is reused for slash commands with arguments (for example `/plan`,
 `/review`, and `/ralph`) so pasted content and text elements are preserved when extracting args.
+This includes `/ralph` option parsing (for example `--loops` and `--instructions`) before the
+final goal text is assembled.
 
 ### Numeric auto-submit path
 

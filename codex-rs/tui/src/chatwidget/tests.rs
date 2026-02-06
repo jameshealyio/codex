@@ -2859,7 +2859,7 @@ async fn slash_ralph_displays_guide() {
 
     let header = render_bottom_first_row(&chat, 70);
     assert!(
-        header.contains("Ralph: Step 1/4"),
+        header.contains("Ralph: Step 1/3"),
         "expected guided wizard prompt header: {header:?}"
     );
 
@@ -2888,58 +2888,85 @@ async fn slash_ralph_guided_flow_emits_step_events() {
     chat.handle_paste("ship release".to_string());
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
-    let mut loops_goal = None;
+    let mut loops_payload = None;
     while let Ok(event) = rx.try_recv() {
-        if let AppEvent::OpenRalphLoopsPrompt { goal } = event {
-            loops_goal = Some(goal);
+        if let AppEvent::OpenRalphLoopsPrompt {
+            goal,
+            goal_file_path,
+        } = event
+        {
+            loops_payload = Some((goal, goal_file_path));
             break;
         }
     }
-    let loops_goal = loops_goal.expect("expected OpenRalphLoopsPrompt event");
+    let (loops_goal, loops_goal_file_path) =
+        loops_payload.expect("expected OpenRalphLoopsPrompt event");
     assert_eq!(loops_goal, "ship release");
+    assert_eq!(loops_goal_file_path, None);
 
-    chat.show_ralph_loops_prompt(loops_goal.clone());
+    chat.show_ralph_loops_prompt(loops_goal.clone(), loops_goal_file_path.clone());
     chat.handle_paste("5".to_string());
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    let (compact_goal, loops) = match rx.try_recv() {
-        Ok(AppEvent::OpenRalphCompactPrompt { goal, loops }) => (goal, loops),
+    let (compact_goal, loops, compact_goal_file_path) = match rx.try_recv() {
+        Ok(AppEvent::OpenRalphCompactPrompt {
+            goal,
+            loops,
+            goal_file_path,
+        }) => (goal, loops, goal_file_path),
         other => panic!("expected OpenRalphCompactPrompt, got {other:?}"),
     };
     assert_eq!(compact_goal, "ship release");
     assert_eq!(loops, 5);
+    assert_eq!(compact_goal_file_path, None);
 
-    chat.show_ralph_compact_prompt(compact_goal.clone(), loops);
+    chat.show_ralph_compact_prompt(compact_goal.clone(), loops, compact_goal_file_path.clone());
     chat.handle_paste("55".to_string());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    let (instr_goal, instr_loops, compact_at_percent) = match rx.try_recv() {
-        Ok(AppEvent::OpenRalphInstructionsPrompt {
-            goal,
-            loops,
-            compact_at_percent,
-        }) => (goal, loops, compact_at_percent),
-        other => panic!("expected OpenRalphInstructionsPrompt, got {other:?}"),
-    };
-    assert_eq!(instr_goal, "ship release");
-    assert_eq!(instr_loops, 5);
-    assert_eq!(compact_at_percent, 55);
-
-    chat.show_ralph_instructions_prompt(instr_goal.clone(), instr_loops, compact_at_percent);
-    chat.handle_paste("none".to_string());
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
     match rx.try_recv() {
         Ok(AppEvent::SubmitRalphFromWizard {
             goal,
             loops,
             compact_at_percent,
-            instructions_path,
+            goal_file_path,
         }) => {
             assert_eq!(goal, "ship release");
             assert_eq!(loops, 5);
             assert_eq!(compact_at_percent, 55);
-            assert_eq!(instructions_path, None);
+            assert_eq!(goal_file_path, None);
         }
         other => panic!("expected SubmitRalphFromWizard, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn slash_ralph_guided_goal_accepts_file_reference() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let temp = tempdir().unwrap();
+    let instructions_path = temp.path().join("INSTRUCTIONS.md");
+    std::fs::write(&instructions_path, "Goal from file").unwrap();
+    chat.config.cwd = temp.path().to_path_buf();
+
+    chat.dispatch_command(SlashCommand::Ralph);
+    chat.handle_paste("@INSTRUCTIONS.md".to_string());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let mut payload = None;
+    while let Ok(event) = rx.try_recv() {
+        if let AppEvent::OpenRalphLoopsPrompt {
+            goal,
+            goal_file_path,
+        } = event
+        {
+            payload = Some((goal, goal_file_path));
+            break;
+        }
+    }
+    let (goal, goal_file_path) = payload.expect("expected OpenRalphLoopsPrompt event");
+    assert!(
+        goal.contains("INSTRUCTIONS.md"),
+        "expected goal to reference file"
+    );
+    assert_eq!(goal_file_path, Some("INSTRUCTIONS.md".to_string()));
 }
 
 #[tokio::test]

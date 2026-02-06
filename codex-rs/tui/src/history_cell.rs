@@ -1779,6 +1779,11 @@ pub(crate) fn new_ralph_guide_event() -> PlainHistoryCell {
         .into(),
         vec!["  Usage: ".dim(), "/ralph".cyan()].into(),
         vec!["    Show this guide and launch an interactive setup wizard.".into()].into(),
+        vec![
+            "    In Step 1 you can enter inline goal text or a file path using @file or file:file."
+                .into(),
+        ]
+        .into(),
         vec!["  Usage: ".dim(), "/ralph [options] <goal>".cyan()].into(),
         vec!["    Start Ralph mode with an opinionated execution protocol.".into()].into(),
         vec!["  Options:".dim()].into(),

@@ -2192,31 +2192,32 @@ impl App {
             AppEvent::OpenReviewCustomPrompt => {
                 self.chat_widget.show_review_custom_prompt();
             }
-            AppEvent::OpenRalphLoopsPrompt { goal } => {
-                self.chat_widget.show_ralph_loops_prompt(goal);
-            }
-            AppEvent::OpenRalphCompactPrompt { goal, loops } => {
-                self.chat_widget.show_ralph_compact_prompt(goal, loops);
-            }
-            AppEvent::OpenRalphInstructionsPrompt {
+            AppEvent::OpenRalphLoopsPrompt {
                 goal,
-                loops,
-                compact_at_percent,
+                goal_file_path,
             } => {
                 self.chat_widget
-                    .show_ralph_instructions_prompt(goal, loops, compact_at_percent);
+                    .show_ralph_loops_prompt(goal, goal_file_path);
+            }
+            AppEvent::OpenRalphCompactPrompt {
+                goal,
+                loops,
+                goal_file_path,
+            } => {
+                self.chat_widget
+                    .show_ralph_compact_prompt(goal, loops, goal_file_path);
             }
             AppEvent::SubmitRalphFromWizard {
                 goal,
                 loops,
                 compact_at_percent,
-                instructions_path,
+                goal_file_path,
             } => {
                 self.chat_widget.submit_ralph_from_wizard(
                     goal,
                     loops,
                     compact_at_percent,
-                    instructions_path,
+                    goal_file_path,
                 );
             }
             AppEvent::SubmitUserMessageWithMode {

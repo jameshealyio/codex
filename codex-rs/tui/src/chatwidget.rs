@@ -3650,67 +3650,24 @@ impl ChatWidget {
 
     fn show_ralph_goal_prompt(&mut self) {
         let tx = self.app_event_tx.clone();
+        let cwd = self.config.cwd.clone();
         let view = CustomPromptView::new(
-            "Ralph: Step 1/4".to_string(),
-            "Describe the goal to complete".to_string(),
+            "Ralph: Step 1/3".to_string(),
+            "Goal text, @INSTRUCTIONS.md, or file:INSTRUCTIONS.md".to_string(),
             Some("Goal".to_string()),
-            Box::new(move |goal: String| {
-                tx.send(AppEvent::OpenRalphLoopsPrompt { goal });
-            }),
-        );
-        self.bottom_pane.show_view(Box::new(view));
-    }
-
-    pub(crate) fn show_ralph_loops_prompt(&mut self, goal: String) {
-        let tx = self.app_event_tx.clone();
-        let goal_for_callback = goal.clone();
-        let view = CustomPromptView::new(
-            "Ralph: Step 2/4".to_string(),
-            format!("Loop budget ({DEFAULT_RALPH_LOOPS} recommended)"),
-            Some("Loops".to_string()),
-            Box::new(
-                move |loops_raw: String| match Self::parse_ralph_loops(loops_raw.trim()) {
-                    Ok(loops) => tx.send(AppEvent::OpenRalphCompactPrompt {
-                        goal: goal_for_callback.clone(),
-                        loops,
+            Box::new(move |goal_input: String| {
+                match Self::parse_ralph_goal_or_file_input(&cwd, goal_input.trim()) {
+                    Ok((goal, goal_file_path)) => tx.send(AppEvent::OpenRalphLoopsPrompt {
+                        goal,
+                        goal_file_path,
                     }),
                     Err(err) => {
                         tx.send(AppEvent::InsertHistoryCell(Box::new(
                             history_cell::new_error_event(err),
                         )));
                         tx.send(AppEvent::OpenRalphLoopsPrompt {
-                            goal: goal_for_callback.clone(),
-                        });
-                    }
-                },
-            ),
-        );
-        self.bottom_pane.show_view(Box::new(view));
-    }
-
-    pub(crate) fn show_ralph_compact_prompt(&mut self, goal: String, loops: u32) {
-        let tx = self.app_event_tx.clone();
-        let goal_for_callback = goal.clone();
-        let view = CustomPromptView::new(
-            "Ralph: Step 3/4".to_string(),
-            format!(
-                "Compaction threshold percent ({DEFAULT_RALPH_COMPACT_AT_PERCENT} recommended)"
-            ),
-            Some("Compact At %".to_string()),
-            Box::new(move |compact_raw: String| {
-                match Self::parse_ralph_compact_at_percent(compact_raw.trim()) {
-                    Ok(compact_at_percent) => tx.send(AppEvent::OpenRalphInstructionsPrompt {
-                        goal: goal_for_callback.clone(),
-                        loops,
-                        compact_at_percent,
-                    }),
-                    Err(err) => {
-                        tx.send(AppEvent::InsertHistoryCell(Box::new(
-                            history_cell::new_error_event(err),
-                        )));
-                        tx.send(AppEvent::OpenRalphCompactPrompt {
-                            goal: goal_for_callback.clone(),
-                            loops,
+                            goal: String::new(),
+                            goal_file_path: None,
                         });
                     }
                 }
@@ -3719,35 +3676,74 @@ impl ChatWidget {
         self.bottom_pane.show_view(Box::new(view));
     }
 
-    pub(crate) fn show_ralph_instructions_prompt(
+    pub(crate) fn show_ralph_loops_prompt(&mut self, goal: String, goal_file_path: Option<String>) {
+        if goal.is_empty() {
+            self.show_ralph_goal_prompt();
+            return;
+        }
+        let tx = self.app_event_tx.clone();
+        let goal_for_callback = goal.clone();
+        let goal_file_path_for_callback = goal_file_path.clone();
+        let view = CustomPromptView::new(
+            "Ralph: Step 2/3".to_string(),
+            format!("Loop budget ({DEFAULT_RALPH_LOOPS} recommended)"),
+            Some("Loops".to_string()),
+            Box::new(
+                move |loops_raw: String| match Self::parse_ralph_loops(loops_raw.trim()) {
+                    Ok(loops) => tx.send(AppEvent::OpenRalphCompactPrompt {
+                        goal: goal_for_callback.clone(),
+                        loops,
+                        goal_file_path: goal_file_path_for_callback.clone(),
+                    }),
+                    Err(err) => {
+                        tx.send(AppEvent::InsertHistoryCell(Box::new(
+                            history_cell::new_error_event(err),
+                        )));
+                        tx.send(AppEvent::OpenRalphLoopsPrompt {
+                            goal: goal_for_callback.clone(),
+                            goal_file_path: goal_file_path_for_callback.clone(),
+                        });
+                    }
+                },
+            ),
+        );
+        self.bottom_pane.show_view(Box::new(view));
+    }
+
+    pub(crate) fn show_ralph_compact_prompt(
         &mut self,
         goal: String,
         loops: u32,
-        compact_at_percent: u8,
+        goal_file_path: Option<String>,
     ) {
         let tx = self.app_event_tx.clone();
         let goal_for_callback = goal.clone();
+        let goal_file_path_for_callback = goal_file_path.clone();
         let view = CustomPromptView::new(
-            "Ralph: Step 4/4".to_string(),
-            "Instructions file path (or 'none')".to_string(),
-            Some("Instructions".to_string()),
-            Box::new(move |instructions_raw: String| {
-                let normalized = instructions_raw.trim();
-                let instructions_path = if normalized.eq_ignore_ascii_case("none")
-                    || normalized.eq_ignore_ascii_case("skip")
-                    || normalized == "-"
-                {
-                    None
-                } else {
-                    Some(normalized.to_string())
-                };
-
-                tx.send(AppEvent::SubmitRalphFromWizard {
-                    goal: goal_for_callback.clone(),
-                    loops,
-                    compact_at_percent,
-                    instructions_path,
-                });
+            "Ralph: Step 3/3".to_string(),
+            format!(
+                "Compaction threshold percent ({DEFAULT_RALPH_COMPACT_AT_PERCENT} recommended)"
+            ),
+            Some("Compact At %".to_string()),
+            Box::new(move |compact_raw: String| {
+                match Self::parse_ralph_compact_at_percent(compact_raw.trim()) {
+                    Ok(compact_at_percent) => tx.send(AppEvent::SubmitRalphFromWizard {
+                        goal: goal_for_callback.clone(),
+                        loops,
+                        compact_at_percent,
+                        goal_file_path: goal_file_path_for_callback.clone(),
+                    }),
+                    Err(err) => {
+                        tx.send(AppEvent::InsertHistoryCell(Box::new(
+                            history_cell::new_error_event(err),
+                        )));
+                        tx.send(AppEvent::OpenRalphCompactPrompt {
+                            goal: goal_for_callback.clone(),
+                            loops,
+                            goal_file_path: goal_file_path_for_callback.clone(),
+                        });
+                    }
+                }
             }),
         );
         self.bottom_pane.show_view(Box::new(view));
@@ -3758,14 +3754,14 @@ impl ChatWidget {
         goal: String,
         loops: u32,
         compact_at_percent: u8,
-        instructions_path: Option<String>,
+        goal_file_path: Option<String>,
     ) {
-        let instructions = match instructions_path {
+        let instructions = match goal_file_path {
             Some(path) => match Self::load_ralph_instructions(&self.config.cwd, &path) {
                 Ok(instructions) => Some(instructions),
                 Err(err) => {
                     self.add_error_message(err);
-                    self.show_ralph_instructions_prompt(goal, loops, compact_at_percent);
+                    self.show_ralph_goal_prompt();
                     return;
                 }
             },
@@ -3779,6 +3775,54 @@ impl ChatWidget {
             instructions,
         };
         self.submit_ralph_user_message(options, Vec::new());
+    }
+
+    fn parse_ralph_goal_or_file_input(
+        cwd: &Path,
+        raw: &str,
+    ) -> Result<(String, Option<String>), String> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err("Goal cannot be empty.".to_string());
+        }
+
+        if let Some(path) = trimmed.strip_prefix('@') {
+            let normalized = path.trim();
+            if normalized.is_empty() {
+                return Err("`@` must be followed by a file path.".to_string());
+            }
+            return Ok((
+                format!("Execute the objective described in `{normalized}`."),
+                Some(normalized.to_string()),
+            ));
+        }
+        if let Some(path) = trimmed.strip_prefix("file:") {
+            let normalized = path.trim();
+            if normalized.is_empty() {
+                return Err("`file:` must be followed by a file path.".to_string());
+            }
+            return Ok((
+                format!("Execute the objective described in `{normalized}`."),
+                Some(normalized.to_string()),
+            ));
+        }
+
+        if !trimmed.contains(char::is_whitespace) {
+            let candidate = PathBuf::from(trimmed);
+            let resolved = if candidate.is_absolute() {
+                candidate
+            } else {
+                cwd.join(candidate)
+            };
+            if resolved.exists() && resolved.is_file() {
+                return Ok((
+                    format!("Execute the objective described in `{trimmed}`."),
+                    Some(trimmed.to_string()),
+                ));
+            }
+        }
+
+        Ok((trimmed.to_string(), None))
     }
 
     fn submit_ralph_user_message(

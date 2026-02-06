@@ -8,7 +8,10 @@ This fork adds a custom slash command:
 
 - `/ralph`
   - Shows an in-app guide and starts an interactive step-by-step setup flow
-    (goal -> loops -> compaction threshold -> optional instructions file).
+    (goal-or-file -> loops -> compaction threshold).
+  - In Step 1, enter either:
+    - inline goal text, or
+    - a file path via `@INSTRUCTIONS.md` or `file:INSTRUCTIONS.md`.
 - `/ralph [options] <goal>`
   - Sends a structured prompt that asks Codex to:
     - run iterative loops until the goal is complete,

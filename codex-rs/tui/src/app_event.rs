@@ -284,12 +284,21 @@ pub(crate) enum AppEvent {
         goal_file_path: Option<String>,
     },
 
+    /// Open the Ralph guided-flow model prompt after compaction collection.
+    OpenRalphModelPrompt {
+        goal: String,
+        loops: u32,
+        compact_at_percent: u8,
+        goal_file_path: Option<String>,
+    },
+
     /// Submit a Ralph-mode message assembled from guided prompt inputs.
     SubmitRalphFromWizard {
         goal: String,
         loops: u32,
         compact_at_percent: u8,
         goal_file_path: Option<String>,
+        model: String,
     },
 
     /// Submit a user message with an explicit collaboration mask.

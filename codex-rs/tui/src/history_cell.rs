@@ -1780,7 +1780,7 @@ pub(crate) fn new_ralph_guide_event() -> PlainHistoryCell {
         vec!["  Usage: ".dim(), "/ralph".cyan()].into(),
         vec!["    Show this guide and launch an interactive setup wizard.".into()].into(),
         vec![
-            "    In Step 1 you can enter inline goal text or a file path using @file or file:file."
+            "    Guided setup now asks for goal/file, loop count, compaction threshold, and model."
                 .into(),
         ]
         .into(),
@@ -1798,6 +1798,8 @@ pub(crate) fn new_ralph_guide_event() -> PlainHistoryCell {
             "    --instructions, -i <path>  Load extra instructions from a file (for example INSTRUCTIONS.md).".into(),
         ]
         .into(),
+        vec!["    --model, -m <name>      Model slug for the Ralph run (default: current model).".into()]
+            .into(),
         vec![
             "  Example: ".dim(),
             "/ralph --loops 8 --instructions INSTRUCTIONS.md ship the failing test fix".cyan(),

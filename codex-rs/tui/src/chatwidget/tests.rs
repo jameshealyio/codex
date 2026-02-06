@@ -2859,7 +2859,7 @@ async fn slash_ralph_displays_guide() {
 
     let header = render_bottom_first_row(&chat, 70);
     assert!(
-        header.contains("Ralph: Step 1/3"),
+        header.contains("Ralph: Step 1/4"),
         "expected guided wizard prompt header: {header:?}"
     );
 
@@ -2923,7 +2923,7 @@ async fn slash_ralph_guided_flow_emits_step_events() {
     chat.handle_paste("55".to_string());
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
     match rx.try_recv() {
-        Ok(AppEvent::SubmitRalphFromWizard {
+        Ok(AppEvent::OpenRalphModelPrompt {
             goal,
             loops,
             compact_at_percent,
@@ -2933,6 +2933,25 @@ async fn slash_ralph_guided_flow_emits_step_events() {
             assert_eq!(loops, 5);
             assert_eq!(compact_at_percent, 55);
             assert_eq!(goal_file_path, None);
+        }
+        other => panic!("expected OpenRalphModelPrompt, got {other:?}"),
+    }
+
+    chat.show_ralph_model_prompt("ship release".to_string(), 5, 55, None);
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    match rx.try_recv() {
+        Ok(AppEvent::SubmitRalphFromWizard {
+            goal,
+            loops,
+            compact_at_percent,
+            goal_file_path,
+            model,
+        }) => {
+            assert_eq!(goal, "ship release");
+            assert_eq!(loops, 5);
+            assert_eq!(compact_at_percent, 55);
+            assert_eq!(goal_file_path, None);
+            assert!(!model.is_empty());
         }
         other => panic!("expected SubmitRalphFromWizard, got {other:?}"),
     }
@@ -3013,6 +3032,10 @@ async fn slash_ralph_with_args_submits_structured_prompt() {
         "expected goal in Ralph prompt: {text}"
     );
     assert!(
+        text.contains("Model: test-model"),
+        "expected default model in Ralph prompt: {text}"
+    );
+    assert!(
         text.contains("Loop budget: 6"),
         "expected default loop budget in Ralph prompt: {text}"
     );
@@ -3055,7 +3078,7 @@ async fn slash_ralph_with_options_and_instructions_file_submits_structured_promp
     });
 
     chat.bottom_pane.set_composer_text(
-        "/ralph --loops 3 --compact-at 55 --instructions INSTRUCTIONS.md complete release notes"
+        "/ralph --loops 3 --compact-at 55 --model custom-ralph-model --instructions INSTRUCTIONS.md complete release notes"
             .to_string(),
         Vec::new(),
         Vec::new(),
@@ -3076,6 +3099,10 @@ async fn slash_ralph_with_options_and_instructions_file_submits_structured_promp
     assert!(
         text.contains("Compaction threshold: 55%"),
         "expected custom threshold in Ralph prompt: {text}"
+    );
+    assert!(
+        text.contains("Model: custom-ralph-model"),
+        "expected custom model in Ralph prompt: {text}"
     );
     assert!(
         text.contains("External instructions:"),
@@ -3118,6 +3145,29 @@ async fn slash_ralph_with_invalid_option_shows_error_and_guide() {
     assert!(
         rendered.contains("Ralph Mode"),
         "expected guide to follow invalid option error: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn slash_ralph_help_shows_guide_without_error() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
+
+    chat.bottom_pane
+        .set_composer_text("/ralph --help".to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    assert!(op_rx.try_recv().is_err(), "expected no submitted op");
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected guide cell only");
+
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("Ralph Mode"),
+        "expected guide output for /ralph --help: {rendered}"
+    );
+    assert!(
+        !rendered.contains("Run `/ralph` with no arguments"),
+        "did not expect error hint in /ralph --help flow: {rendered}"
     );
 }
 

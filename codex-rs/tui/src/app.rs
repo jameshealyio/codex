@@ -2207,17 +2207,32 @@ impl App {
                 self.chat_widget
                     .show_ralph_compact_prompt(goal, loops, goal_file_path);
             }
+            AppEvent::OpenRalphModelPrompt {
+                goal,
+                loops,
+                compact_at_percent,
+                goal_file_path,
+            } => {
+                self.chat_widget.show_ralph_model_prompt(
+                    goal,
+                    loops,
+                    compact_at_percent,
+                    goal_file_path,
+                );
+            }
             AppEvent::SubmitRalphFromWizard {
                 goal,
                 loops,
                 compact_at_percent,
                 goal_file_path,
+                model,
             } => {
                 self.chat_widget.submit_ralph_from_wizard(
                     goal,
                     loops,
                     compact_at_percent,
                     goal_file_path,
+                    model,
                 );
             }
             AppEvent::SubmitUserMessageWithMode {

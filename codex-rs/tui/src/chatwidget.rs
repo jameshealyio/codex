@@ -259,6 +259,7 @@ struct RalphOptions {
     goal: String,
     loops: u32,
     compact_at_percent: u8,
+    model: String,
     instructions: Option<RalphInstructions>,
 }
 
@@ -3435,17 +3436,26 @@ impl ChatWidget {
                 else {
                     return;
                 };
-                let options =
-                    match Self::parse_ralph_options(prepared_args.trim(), &self.config.cwd) {
-                        Ok(options) => options,
-                        Err(message) => {
-                            self.add_error_message(message);
-                            self.add_to_history(history_cell::new_ralph_guide_event());
-                            self.bottom_pane.drain_pending_submission_state();
-                            self.request_redraw();
-                            return;
-                        }
-                    };
+                if Self::is_ralph_help_invocation(prepared_args.trim()) {
+                    self.add_to_history(history_cell::new_ralph_guide_event());
+                    self.bottom_pane.drain_pending_submission_state();
+                    self.request_redraw();
+                    return;
+                }
+                let options = match Self::parse_ralph_options(
+                    prepared_args.trim(),
+                    &self.config.cwd,
+                    self.current_model(),
+                ) {
+                    Ok(options) => options,
+                    Err(message) => {
+                        self.add_error_message(message);
+                        self.add_to_history(history_cell::new_ralph_guide_event());
+                        self.bottom_pane.drain_pending_submission_state();
+                        self.request_redraw();
+                        return;
+                    }
+                };
                 if options.goal.is_empty() {
                     self.add_to_history(history_cell::new_ralph_guide_event());
                     self.bottom_pane.drain_pending_submission_state();
@@ -3457,7 +3467,11 @@ impl ChatWidget {
         }
     }
 
-    fn parse_ralph_options(args: &str, cwd: &Path) -> Result<RalphOptions, String> {
+    fn parse_ralph_options(
+        args: &str,
+        cwd: &Path,
+        current_model: &str,
+    ) -> Result<RalphOptions, String> {
         if args.is_empty() {
             return Err("Missing goal. Run `/ralph <goal>`.".to_string());
         }
@@ -3472,6 +3486,7 @@ impl ChatWidget {
 
         let mut loops = DEFAULT_RALPH_LOOPS;
         let mut compact_at_percent = DEFAULT_RALPH_COMPACT_AT_PERCENT;
+        let mut model = current_model.to_string();
         let mut instructions_path: Option<String> = None;
         let mut goal_tokens: Vec<String> = Vec::new();
 
@@ -3527,6 +3542,26 @@ impl ChatWidget {
                 idx += 1;
                 continue;
             }
+            if token == "--model" || token == "-m" {
+                idx += 1;
+                let Some(value) = tokens.get(idx) else {
+                    return Err("`/ralph --model` requires a model name.".to_string());
+                };
+                if value.trim().is_empty() {
+                    return Err("`/ralph --model` requires a model name.".to_string());
+                }
+                model = value.clone();
+                idx += 1;
+                continue;
+            }
+            if let Some(value) = token.strip_prefix("--model=") {
+                if value.trim().is_empty() {
+                    return Err("`/ralph --model` requires a model name.".to_string());
+                }
+                model = value.to_string();
+                idx += 1;
+                continue;
+            }
 
             if token == "--help" || token == "-h" {
                 return Err("Run `/ralph` with no arguments to view the in-app guide.".to_string());
@@ -3556,8 +3591,16 @@ impl ChatWidget {
             goal,
             loops,
             compact_at_percent,
+            model,
             instructions,
         })
+    }
+
+    fn is_ralph_help_invocation(args: &str) -> bool {
+        let Some(tokens) = shlex::split(args) else {
+            return false;
+        };
+        matches!(tokens.as_slice(), [token] if token == "--help" || token == "-h")
     }
 
     fn parse_ralph_loops(raw: &str) -> Result<u32, String> {
@@ -3623,8 +3666,8 @@ impl ChatWidget {
 
     fn build_ralph_prompt(options: &RalphOptions) -> String {
         let mut prompt = format!(
-            "Enter Ralph Wiggum mode and execute until the goal is complete.\n\nGoal:\n{}\n\nMode configuration:\n- Loop budget: {}\n- Compaction threshold: {}%\n- Checkpoint cadence: every loop\n",
-            options.goal, options.loops, options.compact_at_percent
+            "Enter Ralph Wiggum mode and execute until the goal is complete.\n\nGoal:\n{}\n\nMode configuration:\n- Model: {}\n- Loop budget: {}\n- Compaction threshold: {}%\n- Checkpoint cadence: every loop\n",
+            options.goal, options.model, options.loops, options.compact_at_percent
         );
 
         if let Some(instructions) = &options.instructions {
@@ -3652,7 +3695,7 @@ impl ChatWidget {
         let tx = self.app_event_tx.clone();
         let cwd = self.config.cwd.clone();
         let view = CustomPromptView::new(
-            "Ralph: Step 1/3".to_string(),
+            "Ralph: Step 1/4".to_string(),
             "Goal text, @INSTRUCTIONS.md, or file:INSTRUCTIONS.md".to_string(),
             Some("Goal".to_string()),
             Box::new(move |goal_input: String| {
@@ -3685,7 +3728,7 @@ impl ChatWidget {
         let goal_for_callback = goal.clone();
         let goal_file_path_for_callback = goal_file_path.clone();
         let view = CustomPromptView::new(
-            "Ralph: Step 2/3".to_string(),
+            "Ralph: Step 2/4".to_string(),
             format!("Loop budget ({DEFAULT_RALPH_LOOPS} recommended)"),
             Some("Loops".to_string()),
             Box::new(
@@ -3720,14 +3763,14 @@ impl ChatWidget {
         let goal_for_callback = goal.clone();
         let goal_file_path_for_callback = goal_file_path.clone();
         let view = CustomPromptView::new(
-            "Ralph: Step 3/3".to_string(),
+            "Ralph: Step 3/4".to_string(),
             format!(
                 "Compaction threshold percent ({DEFAULT_RALPH_COMPACT_AT_PERCENT} recommended)"
             ),
             Some("Compact At %".to_string()),
             Box::new(move |compact_raw: String| {
                 match Self::parse_ralph_compact_at_percent(compact_raw.trim()) {
-                    Ok(compact_at_percent) => tx.send(AppEvent::SubmitRalphFromWizard {
+                    Ok(compact_at_percent) => tx.send(AppEvent::OpenRalphModelPrompt {
                         goal: goal_for_callback.clone(),
                         loops,
                         compact_at_percent,
@@ -3749,12 +3792,114 @@ impl ChatWidget {
         self.bottom_pane.show_view(Box::new(view));
     }
 
+    pub(crate) fn show_ralph_model_prompt(
+        &mut self,
+        goal: String,
+        loops: u32,
+        compact_at_percent: u8,
+        goal_file_path: Option<String>,
+    ) {
+        let mut presets = match self.models_manager.try_list_models(&self.config) {
+            Ok(models) => models
+                .into_iter()
+                .filter(|preset| preset.show_in_picker)
+                .collect::<Vec<_>>(),
+            Err(_) => {
+                self.add_info_message(
+                    "Models are being updated; using the current model for Ralph.".to_string(),
+                    None,
+                );
+                self.submit_ralph_from_wizard(
+                    goal,
+                    loops,
+                    compact_at_percent,
+                    goal_file_path,
+                    self.current_model().to_string(),
+                );
+                return;
+            }
+        };
+
+        if presets.is_empty() {
+            self.add_info_message(
+                "No selectable models are available; using the current model for Ralph."
+                    .to_string(),
+                None,
+            );
+            self.submit_ralph_from_wizard(
+                goal,
+                loops,
+                compact_at_percent,
+                goal_file_path,
+                self.current_model().to_string(),
+            );
+            return;
+        }
+
+        presets.sort_by(|a, b| a.display_name.cmp(&b.display_name));
+        let current_model = self.current_model().to_string();
+        let initial_selected_idx = presets
+            .iter()
+            .position(|preset| preset.model.as_str() == current_model);
+
+        let items: Vec<SelectionItem> = presets
+            .into_iter()
+            .map(|preset| {
+                let model_slug = preset.model.to_string();
+                let model_for_action = model_slug.clone();
+                let goal_for_action = goal.clone();
+                let goal_file_path_for_action = goal_file_path.clone();
+                let compact_for_action = compact_at_percent;
+                let loops_for_action = loops;
+                let description = if preset.description.is_empty() {
+                    Some(model_slug.clone())
+                } else {
+                    Some(format!("{model_slug} - {}", preset.description))
+                };
+                let search_value = Some(format!(
+                    "{} {} {}",
+                    preset.display_name, model_slug, preset.description
+                ));
+                let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
+                    tx.send(AppEvent::SubmitRalphFromWizard {
+                        goal: goal_for_action.clone(),
+                        loops: loops_for_action,
+                        compact_at_percent: compact_for_action,
+                        goal_file_path: goal_file_path_for_action.clone(),
+                        model: model_for_action.clone(),
+                    });
+                })];
+                SelectionItem {
+                    name: preset.display_name,
+                    description,
+                    is_current: model_slug.as_str() == current_model,
+                    actions,
+                    dismiss_on_select: true,
+                    search_value,
+                    ..Default::default()
+                }
+            })
+            .collect();
+
+        self.bottom_pane.show_selection_view(SelectionViewParams {
+            title: Some("Ralph: Step 4/4".to_string()),
+            subtitle: Some("Choose a model for this Ralph run.".to_string()),
+            footer_hint: Some(standard_popup_hint_line()),
+            items,
+            is_searchable: true,
+            search_placeholder: Some("Type to filter models".to_string()),
+            initial_selected_idx,
+            ..Default::default()
+        });
+    }
+
     pub(crate) fn submit_ralph_from_wizard(
         &mut self,
         goal: String,
         loops: u32,
         compact_at_percent: u8,
         goal_file_path: Option<String>,
+        model: String,
     ) {
         let instructions = match goal_file_path {
             Some(path) => match Self::load_ralph_instructions(&self.config.cwd, &path) {
@@ -3772,6 +3917,7 @@ impl ChatWidget {
             goal,
             loops,
             compact_at_percent,
+            model,
             instructions,
         };
         self.submit_ralph_user_message(options, Vec::new());
@@ -3830,6 +3976,21 @@ impl ChatWidget {
         options: RalphOptions,
         text_elements: Vec<TextElement>,
     ) {
+        if self.is_session_configured() {
+            self.app_event_tx
+                .send(AppEvent::CodexOp(Op::OverrideTurnContext {
+                    cwd: None,
+                    approval_policy: None,
+                    sandbox_policy: None,
+                    windows_sandbox_level: None,
+                    model: Some(options.model.clone()),
+                    effort: None,
+                    summary: None,
+                    collaboration_mode: None,
+                    personality: None,
+                }));
+        }
+
         let prompt = Self::build_ralph_prompt(&options);
         let user_message = UserMessage {
             text: prompt,

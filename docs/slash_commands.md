@@ -8,10 +8,11 @@ This fork adds a custom slash command:
 
 - `/ralph`
   - Shows an in-app guide and starts an interactive step-by-step setup flow
-    (goal-or-file -> loops -> compaction threshold).
+    (goal-or-file -> loops -> compaction threshold -> model picker).
   - In Step 1, enter either:
     - inline goal text, or
     - a file path via `@INSTRUCTIONS.md` or `file:INSTRUCTIONS.md`.
+  - In Step 4, type to filter and select a model.
 - `/ralph [options] <goal>`
   - Sends a structured prompt that asks Codex to:
     - run iterative loops until the goal is complete,
@@ -26,6 +27,8 @@ Supported options:
   - Context compaction threshold (default `60`, range `20..90`).
 - `--instructions, -i <path>`
   - Load external guidance from a file such as `INSTRUCTIONS.md`.
+- `--model, -m <model>`
+  - Set a specific model for this Ralph run (default: current model).
 
 Example:
 

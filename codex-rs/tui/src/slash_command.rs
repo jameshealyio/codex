@@ -26,6 +26,7 @@ pub enum SlashCommand {
     Fork,
     Init,
     Compact,
+    Ralph,
     Plan,
     Collab,
     Agent,
@@ -55,6 +56,7 @@ impl SlashCommand {
             SlashCommand::New => "start a new chat during a conversation",
             SlashCommand::Init => "create an AGENTS.md file with instructions for Codex",
             SlashCommand::Compact => "summarize conversation to prevent hitting the context limit",
+            SlashCommand::Ralph => "run iterative goal-focused mode with a 60% compaction target",
             SlashCommand::Review => "review my current changes and find issues",
             SlashCommand::Rename => "rename the current thread",
             SlashCommand::Resume => "resume a saved chat",
@@ -95,7 +97,7 @@ impl SlashCommand {
     pub fn supports_inline_args(self) -> bool {
         matches!(
             self,
-            SlashCommand::Review | SlashCommand::Rename | SlashCommand::Plan
+            SlashCommand::Review | SlashCommand::Rename | SlashCommand::Plan | SlashCommand::Ralph
         )
     }
 
@@ -107,6 +109,7 @@ impl SlashCommand {
             | SlashCommand::Fork
             | SlashCommand::Init
             | SlashCommand::Compact
+            | SlashCommand::Ralph
             // | SlashCommand::Undo
             | SlashCommand::Model
             | SlashCommand::Personality

@@ -2852,6 +2852,74 @@ async fn slash_fork_requests_current_fork() {
 }
 
 #[tokio::test]
+async fn slash_ralph_displays_guide() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    chat.dispatch_command(SlashCommand::Ralph);
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected Ralph guide message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("Ralph Mode"),
+        "expected guide title in output: {rendered}"
+    );
+    assert!(
+        rendered.contains("/ralph <goal>"),
+        "expected usage in output: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn slash_ralph_with_args_submits_structured_prompt() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+
+    let configured = codex_core::protocol::SessionConfiguredEvent {
+        session_id: ThreadId::new(),
+        forked_from_id: None,
+        thread_name: None,
+        model: "test-model".to_string(),
+        model_provider_id: "test-provider".to_string(),
+        approval_policy: AskForApproval::Never,
+        sandbox_policy: SandboxPolicy::ReadOnly,
+        cwd: PathBuf::from("/home/user/project"),
+        reasoning_effort: Some(ReasoningEffortConfig::default()),
+        history_log_id: 0,
+        history_entry_count: 0,
+        initial_messages: None,
+        rollout_path: None,
+    };
+    chat.handle_codex_event(Event {
+        id: "configured".into(),
+        msg: EventMsg::SessionConfigured(configured),
+    });
+
+    chat.bottom_pane.set_composer_text(
+        "/ralph finish the release checklist".to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let items = match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => items,
+        other => panic!("expected Op::UserTurn, got {other:?}"),
+    };
+    assert_eq!(items.len(), 1);
+    let UserInput::Text { text, .. } = &items[0] else {
+        panic!("expected UserInput::Text item");
+    };
+    assert!(
+        text.contains("Goal:\nfinish the release checklist"),
+        "expected goal in Ralph prompt: {text}"
+    );
+    assert!(
+        text.contains("compact the thread"),
+        "expected compaction instruction in Ralph prompt: {text}"
+    );
+}
+
+#[tokio::test]
 async fn slash_rollout_displays_current_path() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let rollout_path = PathBuf::from("/tmp/codex-test-rollout.jsonl");

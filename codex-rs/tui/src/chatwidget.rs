@@ -3119,6 +3119,9 @@ impl ChatWidget {
                 self.clear_token_usage();
                 self.app_event_tx.send(AppEvent::CodexOp(Op::Compact));
             }
+            SlashCommand::Ralph => {
+                self.add_to_history(history_cell::new_ralph_guide_event());
+            }
             SlashCommand::Review => {
                 self.open_review_popup();
             }
@@ -3403,8 +3406,44 @@ impl ChatWidget {
                 });
                 self.bottom_pane.drain_pending_submission_state();
             }
+            SlashCommand::Ralph if !trimmed.is_empty() => {
+                let Some((prepared_args, prepared_elements)) =
+                    self.bottom_pane.prepare_inline_args_submission(true)
+                else {
+                    return;
+                };
+                let goal = prepared_args.trim();
+                if goal.is_empty() {
+                    self.dispatch_command(cmd);
+                    return;
+                }
+                let prompt = Self::build_ralph_prompt(goal);
+                let user_message = UserMessage {
+                    text: prompt,
+                    local_images: self
+                        .bottom_pane
+                        .take_recent_submission_images_with_placeholders(),
+                    text_elements: prepared_elements,
+                    mention_paths: self.bottom_pane.take_mention_paths(),
+                };
+                if self.is_session_configured() {
+                    self.reasoning_buffer.clear();
+                    self.full_reasoning_buffer.clear();
+                    self.set_status_header(String::from("Working"));
+                    self.submit_user_message(user_message);
+                } else {
+                    self.queue_user_message(user_message);
+                }
+                self.bottom_pane.drain_pending_submission_state();
+            }
             _ => self.dispatch_command(cmd),
         }
+    }
+
+    fn build_ralph_prompt(goal: &str) -> String {
+        format!(
+            "Enter Ralph Wiggum mode and execute until the goal is complete.\n\nGoal:\n{goal}\n\nOperating rules:\n1. Work in iterative loops and keep momentum toward completion.\n2. When context usage approaches about 60%, compact the thread and continue.\n3. After each loop, provide a short checkpoint with done/next/blockers.\n4. Use the selected model unless I explicitly ask to switch.\n5. Stop only when the goal is done or clearly blocked with concrete reasons.\n\nStart now with loop 1."
+        )
     }
 
     fn show_rename_prompt(&mut self) {

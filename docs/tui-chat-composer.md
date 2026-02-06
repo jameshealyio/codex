@@ -110,8 +110,8 @@ There are multiple submission paths, but they share the same core rules:
 5. Clears pending pastes on success and suppresses submission if the final text is empty and there
    are no attachments.
 
-The same preparation path is reused for slash commands with arguments (for example `/plan` and
-`/review`) so pasted content and text elements are preserved when extracting args.
+The same preparation path is reused for slash commands with arguments (for example `/plan`,
+`/review`, and `/ralph`) so pasted content and text elements are preserved when extracting args.
 
 ### Numeric auto-submit path
 

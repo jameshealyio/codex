@@ -1768,6 +1768,30 @@ pub(crate) fn new_info_event(message: String, hint: Option<String>) -> PlainHist
     PlainHistoryCell { lines }
 }
 
+pub(crate) fn new_ralph_guide_event() -> PlainHistoryCell {
+    let lines: Vec<Line<'static>> = vec![
+        vec![
+            "• ".dim(),
+            "Ralph Mode".bold(),
+            " ".into(),
+            "(quick guide)".dim(),
+        ]
+        .into(),
+        vec!["  Usage: ".dim(), "/ralph".cyan()].into(),
+        vec!["    Show this guide and explain how Ralph mode behaves in this fork.".into()].into(),
+        vec!["  Usage: ".dim(), "/ralph <goal>".cyan()].into(),
+        vec!["    Submit a goal-focused prompt that asks Codex to run iterative loops,".into()]
+            .into(),
+        vec!["    compact context around 60%, and continue until complete.".into()].into(),
+        vec![
+            "  Example: ".dim(),
+            "/ralph ship the failing test fix".cyan(),
+        ]
+        .into(),
+    ];
+    PlainHistoryCell { lines }
+}
+
 pub(crate) fn new_error_event(message: String) -> PlainHistoryCell {
     // Use a hair space (U+200A) to create a subtle, near-invisible separation
     // before the text. VS16 is intentionally omitted to keep spacing tighter

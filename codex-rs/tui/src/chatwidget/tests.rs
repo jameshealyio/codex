@@ -2990,7 +2990,7 @@ async fn slash_ralph_guided_goal_accepts_file_reference() {
 
 #[tokio::test]
 async fn slash_ralph_with_args_submits_structured_prompt() {
-    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
     let configured = codex_core::protocol::SessionConfiguredEvent {
         session_id: ThreadId::new(),
@@ -3018,6 +3018,25 @@ async fn slash_ralph_with_args_submits_structured_prompt() {
         Vec::new(),
     );
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let mut override_seen = false;
+    while let Ok(event) = rx.try_recv() {
+        if let AppEvent::CodexOp(Op::OverrideTurnContext {
+            approval_policy,
+            model,
+            ..
+        }) = event
+        {
+            assert_eq!(approval_policy, Some(AskForApproval::Never));
+            assert_eq!(model.as_deref(), Some("test-model"));
+            override_seen = true;
+            break;
+        }
+    }
+    assert!(
+        override_seen,
+        "expected Ralph to emit turn-context override"
+    );
 
     let items = match next_submit_op(&mut op_rx) {
         Op::UserTurn { items, .. } => items,

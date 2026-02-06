@@ -18,6 +18,7 @@ This fork adds a custom slash command:
     - run iterative loops until the goal is complete,
     - compact context at a configurable threshold (default 60%),
     - emit short progress checkpoints each loop.
+  - Forces `ask-for-approval: never` for the Ralph run (auto-approve behavior).
 
 Supported options:
 

@@ -32,7 +32,7 @@ use crate::text_formatting::truncate_text;
 use crate::tooltips;
 use crate::ui_consts::LIVE_PREFIX_COLS;
 use crate::update_action::UpdateAction;
-use crate::version::CODEX_CLI_VERSION;
+use crate::version::codex_cli_version;
 use crate::wrapping::RtOptions;
 use crate::wrapping::word_wrap_line;
 use crate::wrapping::word_wrap_lines;
@@ -435,7 +435,7 @@ impl HistoryCell for UpdateAvailableHistoryCell {
                 padded_emoji("✨").bold().cyan(),
                 "Update available!".bold().cyan(),
                 " ",
-                format!("{CODEX_CLI_VERSION} -> {}", self.latest_version).bold(),
+                format!("{} -> {}", codex_cli_version(), self.latest_version).bold(),
             ],
             update_instruction,
             "",
@@ -956,7 +956,7 @@ pub(crate) fn new_session_info(
         model.clone(),
         reasoning_effort,
         config.cwd.clone(),
-        CODEX_CLI_VERSION,
+        codex_cli_version(),
     );
     let mut parts: Vec<Box<dyn HistoryCell>> = vec![Box::new(header)];
 
@@ -1786,6 +1786,8 @@ pub(crate) fn new_ralph_guide_event() -> PlainHistoryCell {
         .into(),
         vec!["  Usage: ".dim(), "/ralph [options] <goal>".cyan()].into(),
         vec!["    Start Ralph mode with an opinionated execution protocol.".into()].into(),
+        vec!["    Ralph forces auto-approval (`ask-for-approval: never`) for its run.".into()]
+            .into(),
         vec!["  Options:".dim()].into(),
         vec!["    --loops, -l <n>        Number of loops (default: 6, range: 1-50).".into()]
             .into(),

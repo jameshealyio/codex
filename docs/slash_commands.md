@@ -7,7 +7,8 @@ For an overview of Codex CLI slash commands, see [this documentation](https://de
 This fork adds a custom slash command:
 
 - `/ralph`
-  - Shows an in-app guide with usage, options, and examples.
+  - Shows an in-app guide and starts an interactive step-by-step setup flow
+    (goal -> loops -> compaction threshold -> optional instructions file).
 - `/ralph [options] <goal>`
   - Sends a structured prompt that asks Codex to:
     - run iterative loops until the goal is complete,

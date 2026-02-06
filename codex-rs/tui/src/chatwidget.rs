@@ -3143,6 +3143,7 @@ impl ChatWidget {
             }
             SlashCommand::Ralph => {
                 self.add_to_history(history_cell::new_ralph_guide_event());
+                self.show_ralph_goal_prompt();
             }
             SlashCommand::Review => {
                 self.open_review_popup();
@@ -3450,24 +3451,7 @@ impl ChatWidget {
                     self.bottom_pane.drain_pending_submission_state();
                     return;
                 }
-                let prompt = Self::build_ralph_prompt(&options);
-                let user_message = UserMessage {
-                    text: prompt,
-                    local_images: self
-                        .bottom_pane
-                        .take_recent_submission_images_with_placeholders(),
-                    text_elements: prepared_elements,
-                    mention_paths: self.bottom_pane.take_mention_paths(),
-                };
-                if self.is_session_configured() {
-                    self.reasoning_buffer.clear();
-                    self.full_reasoning_buffer.clear();
-                    self.set_status_header(String::from("Working"));
-                    self.submit_user_message(user_message);
-                } else {
-                    self.queue_user_message(user_message);
-                }
-                self.bottom_pane.drain_pending_submission_state();
+                self.submit_ralph_user_message(options, prepared_elements);
             }
             _ => self.dispatch_command(cmd),
         }
@@ -3662,6 +3646,164 @@ impl ChatWidget {
             "\nOperating rules:\n1. Work in iterative loops toward completion.\n2. Start each loop with `Loop X/Y`.\n3. If context usage reaches the configured threshold, compact the thread and continue.\n4. End each loop with a concise checkpoint: `done`, `next`, `blockers`.\n5. Keep the selected model unless explicitly told to switch.\n6. Stop only when complete or truly blocked with concrete evidence.\n\nStart now with loop 1.",
         );
         prompt
+    }
+
+    fn show_ralph_goal_prompt(&mut self) {
+        let tx = self.app_event_tx.clone();
+        let view = CustomPromptView::new(
+            "Ralph: Step 1/4".to_string(),
+            "Describe the goal to complete".to_string(),
+            Some("Goal".to_string()),
+            Box::new(move |goal: String| {
+                tx.send(AppEvent::OpenRalphLoopsPrompt { goal });
+            }),
+        );
+        self.bottom_pane.show_view(Box::new(view));
+    }
+
+    pub(crate) fn show_ralph_loops_prompt(&mut self, goal: String) {
+        let tx = self.app_event_tx.clone();
+        let goal_for_callback = goal.clone();
+        let view = CustomPromptView::new(
+            "Ralph: Step 2/4".to_string(),
+            format!("Loop budget ({DEFAULT_RALPH_LOOPS} recommended)"),
+            Some("Loops".to_string()),
+            Box::new(
+                move |loops_raw: String| match Self::parse_ralph_loops(loops_raw.trim()) {
+                    Ok(loops) => tx.send(AppEvent::OpenRalphCompactPrompt {
+                        goal: goal_for_callback.clone(),
+                        loops,
+                    }),
+                    Err(err) => {
+                        tx.send(AppEvent::InsertHistoryCell(Box::new(
+                            history_cell::new_error_event(err),
+                        )));
+                        tx.send(AppEvent::OpenRalphLoopsPrompt {
+                            goal: goal_for_callback.clone(),
+                        });
+                    }
+                },
+            ),
+        );
+        self.bottom_pane.show_view(Box::new(view));
+    }
+
+    pub(crate) fn show_ralph_compact_prompt(&mut self, goal: String, loops: u32) {
+        let tx = self.app_event_tx.clone();
+        let goal_for_callback = goal.clone();
+        let view = CustomPromptView::new(
+            "Ralph: Step 3/4".to_string(),
+            format!(
+                "Compaction threshold percent ({DEFAULT_RALPH_COMPACT_AT_PERCENT} recommended)"
+            ),
+            Some("Compact At %".to_string()),
+            Box::new(move |compact_raw: String| {
+                match Self::parse_ralph_compact_at_percent(compact_raw.trim()) {
+                    Ok(compact_at_percent) => tx.send(AppEvent::OpenRalphInstructionsPrompt {
+                        goal: goal_for_callback.clone(),
+                        loops,
+                        compact_at_percent,
+                    }),
+                    Err(err) => {
+                        tx.send(AppEvent::InsertHistoryCell(Box::new(
+                            history_cell::new_error_event(err),
+                        )));
+                        tx.send(AppEvent::OpenRalphCompactPrompt {
+                            goal: goal_for_callback.clone(),
+                            loops,
+                        });
+                    }
+                }
+            }),
+        );
+        self.bottom_pane.show_view(Box::new(view));
+    }
+
+    pub(crate) fn show_ralph_instructions_prompt(
+        &mut self,
+        goal: String,
+        loops: u32,
+        compact_at_percent: u8,
+    ) {
+        let tx = self.app_event_tx.clone();
+        let goal_for_callback = goal.clone();
+        let view = CustomPromptView::new(
+            "Ralph: Step 4/4".to_string(),
+            "Instructions file path (or 'none')".to_string(),
+            Some("Instructions".to_string()),
+            Box::new(move |instructions_raw: String| {
+                let normalized = instructions_raw.trim();
+                let instructions_path = if normalized.eq_ignore_ascii_case("none")
+                    || normalized.eq_ignore_ascii_case("skip")
+                    || normalized == "-"
+                {
+                    None
+                } else {
+                    Some(normalized.to_string())
+                };
+
+                tx.send(AppEvent::SubmitRalphFromWizard {
+                    goal: goal_for_callback.clone(),
+                    loops,
+                    compact_at_percent,
+                    instructions_path,
+                });
+            }),
+        );
+        self.bottom_pane.show_view(Box::new(view));
+    }
+
+    pub(crate) fn submit_ralph_from_wizard(
+        &mut self,
+        goal: String,
+        loops: u32,
+        compact_at_percent: u8,
+        instructions_path: Option<String>,
+    ) {
+        let instructions = match instructions_path {
+            Some(path) => match Self::load_ralph_instructions(&self.config.cwd, &path) {
+                Ok(instructions) => Some(instructions),
+                Err(err) => {
+                    self.add_error_message(err);
+                    self.show_ralph_instructions_prompt(goal, loops, compact_at_percent);
+                    return;
+                }
+            },
+            None => None,
+        };
+
+        let options = RalphOptions {
+            goal,
+            loops,
+            compact_at_percent,
+            instructions,
+        };
+        self.submit_ralph_user_message(options, Vec::new());
+    }
+
+    fn submit_ralph_user_message(
+        &mut self,
+        options: RalphOptions,
+        text_elements: Vec<TextElement>,
+    ) {
+        let prompt = Self::build_ralph_prompt(&options);
+        let user_message = UserMessage {
+            text: prompt,
+            local_images: self
+                .bottom_pane
+                .take_recent_submission_images_with_placeholders(),
+            text_elements,
+            mention_paths: self.bottom_pane.take_mention_paths(),
+        };
+        if self.is_session_configured() {
+            self.reasoning_buffer.clear();
+            self.full_reasoning_buffer.clear();
+            self.set_status_header(String::from("Working"));
+            self.submit_user_message(user_message);
+        } else {
+            self.queue_user_message(user_message);
+        }
+        self.bottom_pane.drain_pending_submission_state();
     }
 
     fn show_rename_prompt(&mut self) {

@@ -2192,6 +2192,33 @@ impl App {
             AppEvent::OpenReviewCustomPrompt => {
                 self.chat_widget.show_review_custom_prompt();
             }
+            AppEvent::OpenRalphLoopsPrompt { goal } => {
+                self.chat_widget.show_ralph_loops_prompt(goal);
+            }
+            AppEvent::OpenRalphCompactPrompt { goal, loops } => {
+                self.chat_widget.show_ralph_compact_prompt(goal, loops);
+            }
+            AppEvent::OpenRalphInstructionsPrompt {
+                goal,
+                loops,
+                compact_at_percent,
+            } => {
+                self.chat_widget
+                    .show_ralph_instructions_prompt(goal, loops, compact_at_percent);
+            }
+            AppEvent::SubmitRalphFromWizard {
+                goal,
+                loops,
+                compact_at_percent,
+                instructions_path,
+            } => {
+                self.chat_widget.submit_ralph_from_wizard(
+                    goal,
+                    loops,
+                    compact_at_percent,
+                    instructions_path,
+                );
+            }
             AppEvent::SubmitUserMessageWithMode {
                 text,
                 collaboration_mode,

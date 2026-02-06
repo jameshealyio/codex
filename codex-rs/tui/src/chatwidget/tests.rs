@@ -2857,6 +2857,12 @@ async fn slash_ralph_displays_guide() {
 
     chat.dispatch_command(SlashCommand::Ralph);
 
+    let header = render_bottom_first_row(&chat, 70);
+    assert!(
+        header.contains("Ralph: Step 1/4"),
+        "expected guided wizard prompt header: {header:?}"
+    );
+
     let cells = drain_insert_history(&mut rx);
     assert_eq!(cells.len(), 1, "expected Ralph guide message");
     let rendered = lines_to_single_string(&cells[0]);
@@ -2872,6 +2878,68 @@ async fn slash_ralph_displays_guide() {
         rendered.contains("--loops"),
         "expected options in guide output: {rendered}"
     );
+}
+
+#[tokio::test]
+async fn slash_ralph_guided_flow_emits_step_events() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    chat.dispatch_command(SlashCommand::Ralph);
+    chat.handle_paste("ship release".to_string());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let mut loops_goal = None;
+    while let Ok(event) = rx.try_recv() {
+        if let AppEvent::OpenRalphLoopsPrompt { goal } = event {
+            loops_goal = Some(goal);
+            break;
+        }
+    }
+    let loops_goal = loops_goal.expect("expected OpenRalphLoopsPrompt event");
+    assert_eq!(loops_goal, "ship release");
+
+    chat.show_ralph_loops_prompt(loops_goal.clone());
+    chat.handle_paste("5".to_string());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let (compact_goal, loops) = match rx.try_recv() {
+        Ok(AppEvent::OpenRalphCompactPrompt { goal, loops }) => (goal, loops),
+        other => panic!("expected OpenRalphCompactPrompt, got {other:?}"),
+    };
+    assert_eq!(compact_goal, "ship release");
+    assert_eq!(loops, 5);
+
+    chat.show_ralph_compact_prompt(compact_goal.clone(), loops);
+    chat.handle_paste("55".to_string());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let (instr_goal, instr_loops, compact_at_percent) = match rx.try_recv() {
+        Ok(AppEvent::OpenRalphInstructionsPrompt {
+            goal,
+            loops,
+            compact_at_percent,
+        }) => (goal, loops, compact_at_percent),
+        other => panic!("expected OpenRalphInstructionsPrompt, got {other:?}"),
+    };
+    assert_eq!(instr_goal, "ship release");
+    assert_eq!(instr_loops, 5);
+    assert_eq!(compact_at_percent, 55);
+
+    chat.show_ralph_instructions_prompt(instr_goal.clone(), instr_loops, compact_at_percent);
+    chat.handle_paste("none".to_string());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    match rx.try_recv() {
+        Ok(AppEvent::SubmitRalphFromWizard {
+            goal,
+            loops,
+            compact_at_percent,
+            instructions_path,
+        }) => {
+            assert_eq!(goal, "ship release");
+            assert_eq!(loops, 5);
+            assert_eq!(compact_at_percent, 55);
+            assert_eq!(instructions_path, None);
+        }
+        other => panic!("expected SubmitRalphFromWizard, got {other:?}"),
+    }
 }
 
 #[tokio::test]

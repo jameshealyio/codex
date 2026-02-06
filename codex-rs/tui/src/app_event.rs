@@ -271,6 +271,32 @@ pub(crate) enum AppEvent {
     /// Open the custom prompt option from the review popup.
     OpenReviewCustomPrompt,
 
+    /// Open the Ralph guided-flow loops prompt after goal collection.
+    OpenRalphLoopsPrompt {
+        goal: String,
+    },
+
+    /// Open the Ralph guided-flow compaction prompt after loops collection.
+    OpenRalphCompactPrompt {
+        goal: String,
+        loops: u32,
+    },
+
+    /// Open the Ralph guided-flow instructions prompt after core options collection.
+    OpenRalphInstructionsPrompt {
+        goal: String,
+        loops: u32,
+        compact_at_percent: u8,
+    },
+
+    /// Submit a Ralph-mode message assembled from guided prompt inputs.
+    SubmitRalphFromWizard {
+        goal: String,
+        loops: u32,
+        compact_at_percent: u8,
+        instructions_path: Option<String>,
+    },
+
     /// Submit a user message with an explicit collaboration mask.
     SubmitUserMessageWithMode {
         text: String,
